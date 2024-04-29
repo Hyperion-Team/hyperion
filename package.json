@@ -1,26 +1,27 @@
 {
-	"name": "hyperion",
-	"private": true,
-	"type": "module",
-	"engines": {
-		"node": "20.x"
-	},
-	"scripts": {
-		"build": "frog vercel-build",
-		"dev": "frog dev",
-		"deploy": "vercel"
-	},
-	"dependencies": {
-		"@apollo/client": "3.9.10",
-		"frog": "0.8.1",
-		"graphql": "16.8.1",
-		"hono": "4.2.3",
-		"react": "^18.2.0",
-		"react-dom": "^18.2.0"
-	},
-	"devDependencies": {
-		"tsx": "4.7.2",
-		"typescript": "5.4.4",
-		"vercel": "33.7.0"
-	}
+    "name": "hyperion",
+    "private": true,
+    "type": "module",
+    "engines": {
+        "node": "20.x"
+    },
+    "scripts": {
+        "build": "frog vercel-build",
+        "dev": "frog dev",
+        "deploy": "vercel"
+    },
+    "dependencies": {
+        "@apollo/client": "3.9.10",
+        "frog": "0.8.1",
+        "graphql": "16.8.1",
+        "hono": "4.2.3",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0"
+    },
+    "devDependencies": {
+        "prettier": "3.2.5",
+        "tsx": "4.7.2",
+        "typescript": "5.4.4",
+        "vercel": "33.7.0"
+    }
 }
