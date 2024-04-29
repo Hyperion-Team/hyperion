@@ -11,6 +11,7 @@
         "deploy": "vercel"
     },
     "dependencies": {
+        "@allo-team/allo-v2-sdk": "1.0.67",
         "@apollo/client": "3.9.10",
         "frog": "0.8.1",
         "graphql": "16.8.1",
