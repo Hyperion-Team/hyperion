@@ -5,7 +5,11 @@ import { ethers } from 'ethers';
 import { Button, Frog, TextInput } from 'frog';
 import { devtools } from 'frog/dev';
 import { serveStatic } from 'frog/serve-static';
-import { handle } from 'frog/vercel';
+import { handle } from 'frog/next';
+import { neynar, type NeynarVariables } from 'frog/middlewares';
+import { createSystem } from 'frog/ui';
+
+const { vars } = createSystem();
 
 const imageStyle = {
     alignItems: 'center',
@@ -56,6 +60,11 @@ const CHAIN = {
         blockExplorerUrls: ['https://basescan.org']
     }
 } satisfies Record<string, Chain>;
+
+const CHAIN2 = {
+    '42161': CHAIN.ARBITRUM_ONE,
+    '8453': CHAIN.BASE
+} as Record<string, Chain>;
 
 const DONATION_CONTRACT_ABI = [
     {
@@ -396,13 +405,21 @@ const generateDonationData = (roundId: number, senderAddress: string, voteParame
 };
 
 export const app = new Frog<{
-    Variables: { bannerImage?: string };
+    Variables: { bannerImage?: string } & NeynarVariables;
     State: { qfSlide: number; donateAsset: string; donateAmount: number };
 }>({
     assetsPath: '/',
     basePath: '/',
-    initialState: { qfSlide: 0, donateAsset: '', donateAmount: 0 }
+    initialState: { qfSlide: 0, donateAsset: '', donateAmount: 0 },
+    ui: { vars }
 });
+
+app.use(
+    neynar({
+        apiKey: 'NEYNAR_FROG_FM',
+        features: ['interactor']
+    })
+);
 
 // This is a deprecated path, only for backward compatibility
 app.frame(
@@ -532,14 +549,33 @@ app.frame('/confirm-donate', async c => {
                 </h3>
             </div>
         ),
-        intents: [<Button.Transaction target="/donate">Submit</Button.Transaction>, <Button.Reset>Back</Button.Reset>]
+        intents: [<Button action="/sign-message">Continue</Button>, <Button.Reset>Back</Button.Reset>]
     });
 });
 
-app.transaction('/donate', async c => {
-    console.debug('[ROUTE] /donate');
+app.frame('/sign-message', async c => {
+    console.debug('[ROUTE] /sign-message');
 
-    const { initialPath, address } = c;
+    const { inputText, deriveState } = c;
+    const state = deriveState(previousState => {
+        // TODO: if input empty, show error
+        previousState.donateAmount = parseInt(inputText!);
+    });
+
+    const { var: variables, initialPath } = c;
+    const custodyAddress = c.var.interactor?.custodyAddress;
+
+    if (!custodyAddress) {
+        return c.res({
+            image: (
+                <div style={imageStyle}>
+                    <h3 style={{ color: 'white' }}>Custody address not found</h3>
+                </div>
+            ),
+            intents: [<Button.Reset>Back</Button.Reset>]
+        });
+    }
+
     const { networkId, roundId, projectId } = getDetailsFromInitialPath(initialPath);
     const { round, anchorAddress } = await queryGitcoinProject(networkId, roundId, projectId);
     // const pool = new DonationVotingMerkleDistributionStrategy({
@@ -547,37 +583,90 @@ app.transaction('/donate', async c => {
     //     address: round!.strategyAddress,
     //     poolId: round!.id
     // });
+    // const originChainId = '8453';
 
-    const signer = new ethers.Wallet('some-pk', new JsonRpcProvider(CHAIN.ARBITRUM_ONE.rpcUrls[0]));
+    const provider = new JsonRpcProvider(CHAIN2[networkId].rpcUrls[0]);
+    // const signer = new ethers.Wallet('some-pk', provider);
 
+    const userAmountInWei = BigInt('1000000000000000');
     console.log({ round });
     // TODO: this can of-course be null
-    const vote = generateVote(anchorAddress!, BigInt('1000000000000000000'));
+    const vote = generateVote(anchorAddress!, userAmountInWei);
     console.log({ vote });
-    const encodedMessage = generateDonationData(Number(roundId), address, vote);
+    const encodedMessage = generateDonationData(Number(roundId), custodyAddress, vote);
     console.log({ encodedMessage });
     console.log({ networkId, x: typeof networkId });
     const contractOrigin = new ethers.Contract(
         DONATION_CONTRACT_ADDRESS_PER_CHAIN_ID[Number(networkId)],
         DONATION_CONTRACT_ABI,
-        signer
+        provider
     );
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call
     const messageHash = await contractOrigin.getMessageHash(encodedMessage);
     console.log({ messageHash });
 
-    const signature = await signer.signMessage(ethers.getBytes(messageHash));
+    return c.res({
+        image: (
+            <div style={imageStyle}>
+                <h3 style={{ color: 'white' }}>Sign message!</h3>
+            </div>
+        ),
+        intents: [
+            <TextInput placeholder="Enter signature" />,
+            <Button.Transaction target="/donate">Donate</Button.Transaction>,
+            <Button.Redirect location={`/sign/${messageHash}`}>Sign Message</Button.Redirect>,
+            <Button.Reset>Back</Button.Reset>
+        ]
+    });
+});
+
+app.transaction('/donate', async c => {
+    console.debug('[ROUTE] /donate');
+
+    const { initialPath, address, inputText } = c;
+    const { networkId, roundId, projectId } = getDetailsFromInitialPath(initialPath);
+    const { round, anchorAddress } = await queryGitcoinProject(networkId, roundId, projectId);
+    // // const pool = new DonationVotingMerkleDistributionStrategy({
+    // //     chain: 8453,
+    // //     address: round!.strategyAddress,
+    // //     poolId: round!.id
+    // // });
+    const originChainId = '8453';
+
+    const provider = new JsonRpcProvider(CHAIN2[networkId].rpcUrls[0]);
+    // const signer = new ethers.Wallet('4f7b508554a202700230e96aa569f6d8a4052157ae2579ef68a2f1e8c343f88a', provider);
+
+    const userAmountInWei = BigInt('1000000000000000');
+    // console.log({ round });
+    // TODO: this can of-course be null
+    const vote = generateVote(anchorAddress!, userAmountInWei);
+    console.log({ vote });
+    const encodedMessage = generateDonationData(Number(roundId), address, vote);
+    console.log({ encodedMessage });
+    // console.log({ networkId, x: typeof networkId });
+    const contractOrigin = new ethers.Contract(
+        DONATION_CONTRACT_ADDRESS_PER_CHAIN_ID[Number(networkId)],
+        DONATION_CONTRACT_ABI,
+        provider
+    );
+    // // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+    // const messageHash = await contractOrigin.getMessageHash(encodedMessage);
+    // console.log({ messageHash });
+
+    // const signature = await signer.signMessage(ethers.getBytes(messageHash));
+    const signature = inputText!;
     console.log({ signature });
 
     const messageCombined = generateCombinedMessage(encodedMessage, signature);
     console.log({ messageCombined });
 
-    const userAmountInWei = BigInt('1000000000000000000');
+    // const userAmountInWei = BigInt('1000000000000000');
 
     const url = `https://across.to/api/suggested-fees?${new URLSearchParams({
-        originChainId: '8453',
-        token: WRAPPED_ETH_ADDRESS_PER_CHAIN_ID[Number('8453')],
-        amount: '1000000000000000000', // userAmountInWei.toString(),
+        originChainId: originChainId,
+        token: WRAPPED_ETH_ADDRESS_PER_CHAIN_ID[Number(originChainId)],
+        // amount: '1000000000000000000', // userAmountInWei.toString(),
+        amount: userAmountInWei.toString(),
         message: messageCombined,
         recipient: DONATION_CONTRACT_ADDRESS_PER_CHAIN_ID[Number(networkId)],
         destinationChainId: networkId
@@ -617,7 +706,7 @@ app.transaction('/donate', async c => {
         recipient: DONATION_CONTRACT_ADDRESS_PER_CHAIN_ID[Number(networkId)] ?? '',
         inputAmount: inputAmount,
         outputAmount: userAmountInWei,
-        inputToken: WRAPPED_ETH_ADDRESS_PER_CHAIN_ID[Number('8453')] ?? '',
+        inputToken: WRAPPED_ETH_ADDRESS_PER_CHAIN_ID[Number(originChainId)] ?? '',
         outputToken: '0x0000000000000000000000000000000000000000',
         destinationChainId: Number(networkId),
         exclusiveRelayer: '0x0000000000000000000000000000000000000000',
@@ -633,10 +722,10 @@ app.transaction('/donate', async c => {
 
     return c.send({
         value: inputAmount,
-        to: DONATION_CONTRACT_ADDRESS_PER_CHAIN_ID['8453'] as `0x${string}`,
+        to: DONATION_CONTRACT_ADDRESS_PER_CHAIN_ID[originChainId] as `0x${string}`,
         // to: preparedTx.to as `0x${string}`,
         data: preparedTx.data as `0x${string}`,
-        chainId: 'eip155:8453'
+        chainId: `eip155:${originChainId}`
     });
 });
 
