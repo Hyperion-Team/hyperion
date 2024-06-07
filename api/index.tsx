@@ -361,7 +361,7 @@ const getDetailsFromInitialPath = (initialPath: string) => {
     return { networkId, roundId, projectId };
 };
 
-const generateVote = (recipientId: string, amount: number) => {
+const generateVote = (recipientId: string, amount: BigInt) => {
     const PermitTypeNone = 0; // 0 = native currency transfer
     const NATIVE = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'; // Gitcoin internal address for native
     const nonce = 0; // approval specific, always 0 in our case
@@ -552,7 +552,7 @@ app.transaction('/donate', async c => {
 
     console.log({ round });
     // TODO: this can of-course be null
-    const vote = generateVote(anchorAddress!, 100);
+    const vote = generateVote(anchorAddress!, BigInt('1000000000000000000'));
     console.log({ vote });
     const encodedMessage = generateDonationData(Number(roundId), address, vote);
     console.log({ encodedMessage });
@@ -572,27 +572,41 @@ app.transaction('/donate', async c => {
     const messageCombined = generateCombinedMessage(encodedMessage, signature);
     console.log({ messageCombined });
 
-    const userAmountInWei = BigInt('1000000000000');
+    const userAmountInWei = BigInt('1000000000000000000');
 
     const url = `https://across.to/api/suggested-fees?${new URLSearchParams({
         originChainId: '8453',
         token: WRAPPED_ETH_ADDRESS_PER_CHAIN_ID[Number('8453')],
         amount: '1000000000000000000', // userAmountInWei.toString(),
-        // message: messageCombined,
-        // recipient: DONATION_CONTRACT_ADDRESS_PER_CHAIN_ID[Number(networkId)],
+        message: messageCombined,
+        recipient: DONATION_CONTRACT_ADDRESS_PER_CHAIN_ID[Number(networkId)],
         destinationChainId: networkId
     }).toString()}`;
 
     console.log({ url });
 
-    const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    });
+    let feeResponse;
+    try {
+        const response = await fetch(`https://www.idriss.xyz/post-data`, {
+            method: 'POST',
+            body: JSON.stringify({ url }),
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        // const response = await fetch(url, {
+        //     method: 'GET'
+        //     // headers: {
+        //     //     'Content-Type': 'application/json'
+        //     // }
+        // });
+        // console.log({ response: await response.text(), responseStatus: response.status });
+        feeResponse = await response.json();
+        console.log({ feeResponse });
+    } catch (e) {
+        console.error(e);
+    }
 
-    const feeResponse = await response.json();
     console.log({ feeResponse });
 
     const fee = Math.floor(Number(feeResponse.totalRelayFee.total) * 1.01);
@@ -619,7 +633,7 @@ app.transaction('/donate', async c => {
 
     return c.send({
         value: inputAmount,
-        to: DONATION_CONTRACT_ADDRESS_PER_CHAIN_ID['8453'],
+        to: DONATION_CONTRACT_ADDRESS_PER_CHAIN_ID['8453'] as `0x${string}`,
         // to: preparedTx.to as `0x${string}`,
         data: preparedTx.data as `0x${string}`,
         chainId: 'eip155:8453'
